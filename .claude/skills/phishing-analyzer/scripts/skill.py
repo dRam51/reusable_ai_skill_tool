@@ -171,8 +171,11 @@ def judge_email(analysis: EmailAnalysis) -> PhishingVerdict:
         model="claude-opus-4-7",
         max_tokens=4096,
         thinking={"type": "adaptive"},
-        cache_control={"type": "ephemeral"},
-        system=_SYSTEM_PROMPT,
+        system=[{
+            "type": "text",
+            "text": _SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }],
         messages=[{
             "role": "user",
             "content": (
