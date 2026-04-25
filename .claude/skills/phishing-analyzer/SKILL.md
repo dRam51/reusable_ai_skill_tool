@@ -9,109 +9,124 @@ description: >
 
 # Phishing Email Analyzer
 
-Accepts a `.eml` file. Runs two stages — technical extraction then AI judgment —
-and requires human confirmation before any escalation action is taken.
+## When to Use This Skill
 
-## Folder Structure
+- A user wants to know whether a specific email is a phishing attempt
+- An email has been flagged as suspicious and needs triage
+- A `.eml` file is available and needs automated pre-screening before human review
+- You need a confidence-rated, evidence-backed verdict to inform a security decision
+- You want attachment hashes or URL destinations checked before opening anything
 
-```
-phishing-analyzer/
-├── SKILL.md               ← this file
-├── scripts/
-│   ├── analyzer.py        ← Stage 1: technical extraction
-│   ├── skill.py           ← Stage 2: AI judgment (Anthropic SDK)
-│   └── main.py            ← CLI entry point + HITL gate
-├── references/
-│   ├── known_brands.md    ← brand list used for lookalike detection
-│   └── auth_headers_reference.md  ← SPF/DKIM/DMARC header guide
-└── assets/
-    └── sample_phishing.eml  ← test fixture
-```
+## When NOT to Use This Skill
 
-## Quick Start
+- The input is not a `.eml` file (e.g. a screenshot, forwarded text, or copy-paste) — the extractor requires raw RFC 2822 format to parse headers and attachments
+- You need real-time inbox scanning or bulk processing of a mail queue — this skill analyzes one email at a time interactively
+- A definitive legal or forensic conclusion is required — this skill provides a triage signal, not a formal security investigation
+- The email has already been opened and links clicked — this skill assesses risk before action; post-exposure response requires a separate incident workflow
+- You want the skill to automatically report, delete, or forward the email — all actions require explicit human confirmation; this skill will not act on your behalf
 
+---
+
+## Expected Inputs
+
+| Input | Format | Required |
+|---|---|---|
+| Email file | Raw `.eml` file (RFC 2822 format) | Yes |
+| `--json` flag | CLI flag for machine-readable output | No |
+
+**How to pass the input:**
 ```bash
-export ANTHROPIC_API_KEY=sk-...
-pip install -r requirements.txt          # from project root
-
-# Run via root launcher
-python main.py .claude/skills/phishing-analyzer/assets/sample_phishing.eml
-
-# Or run the skill script directly
-cd .claude/skills/phishing-analyzer/scripts
-python main.py ../assets/sample_phishing.eml
-python main.py ../assets/sample_phishing.eml --json
+python main.py path/to/email.eml          # interactive mode
+python main.py path/to/email.eml --json   # JSON output mode
 ```
 
-## Verdict
+The `.eml` file must contain the full raw email including headers. Emails exported
+from mail clients (Outlook, Apple Mail, Gmail "Download message") are acceptable.
+Forwarded plain-text copies without headers will result in an `UNCERTAIN` verdict
+due to missing authentication data.
+
+---
+
+## Expected Output
+
+### Verdict
 
 | Value | Meaning |
 |---|---|
 | `PHISHING` | Evidence clearly indicates malicious intent |
 | `NOT_PHISHING` | Evidence clearly indicates legitimate email |
-| `UNCERTAIN` | Data insufficient or contradictory — **stated upfront** |
+| `UNCERTAIN` | Data insufficient or contradictory — stated upfront before anything else |
 
-## Stage 1 — Technical Extraction (`scripts/analyzer.py`)
+### Confidence Level
 
-| Feature | Detail |
+| Value | Meaning |
 |---|---|
-| Headers | All headers; surfaces auth, originating IP, mailer |
-| SPF / DKIM / DMARC | Parsed from `Authentication-Results` and `Received-SPF` |
-| URL resolution | Follows redirects; records original → final URL, status code |
-| Attachment hashes | MD5 + SHA-256 per attachment |
-| Lookalike domains | Levenshtein ≤ 3 vs 30+ brands (see `references/known_brands.md`) |
-| `data_availability` | Explicit flags for what was/wasn't found |
+| `HIGH` | Multiple strong indicators point in the same direction |
+| `MEDIUM` | Some indicators present but not conclusive |
+| `LOW` | Minimal data available; verdict is a weak signal only |
 
-## Stage 2 — AI Judgment (`scripts/skill.py`)
-
-- **Model:** `claude-opus-4-7` with adaptive thinking
-- **Structured output:** Pydantic `PhishingVerdict` via `messages.parse()`
-- **Prompt caching** on system prompt for repeated calls
-
-### Anti-Hallucination Design
-
-- Every `evidence` item must quote a **specific value from the extracted data**.
-  Generic claims ("urgent language") are explicitly forbidden in the system prompt.
-- `data_sufficient=false` forces `verdict=UNCERTAIN` when fewer than 2 concrete
-  items can be cited, or when signals are contradictory.
-- `uncertainty_statement` (required when `UNCERTAIN`) names what is missing.
-- `data_availability` dict tells Claude exactly which fields are present vs null.
-
-## Human-in-the-Loop Gate (`scripts/main.py`)
-
-The skill **never acts automatically**. After displaying the analysis:
-
-| Verdict | Prompt shown to human |
-|---|---|
-| `PHISHING` | *"Would you like to see escalation steps? [y/N]"* |
-| `UNCERTAIN` | *"Would you like to see steps for flagging for manual review? [y/N]"* |
-| `NOT_PHISHING` | Displays result and exits — no prompt needed |
-
-`recommended_actions` are displayed **only after** the human types `y`.
-Nothing is reported, forwarded, or deleted without explicit confirmation.
-
-## JSON Output Schema
+### Full JSON Schema
 
 ```json
 {
   "verdict": "PHISHING | NOT_PHISHING | UNCERTAIN",
   "confidence": "HIGH | MEDIUM | LOW",
-  "risk_score": 0-100,
+  "risk_score": 0,
   "data_sufficient": true,
   "uncertainty_statement": null,
-  "evidence": ["SPF=fail", "URL redirects to paypa1.com (edit-distance 1 from paypal)"],
-  "summary": "One factual sentence.",
-  "user_message": "2-3 sentences for a non-technical reader.",
-  "recommended_actions": ["Consider reporting to security@company.com", "..."]
+  "evidence": [
+    "SPF=fail",
+    "URL redirects to paypa1.com (edit-distance 1 from paypal)"
+  ],
+  "summary": "One factual sentence stating what was found.",
+  "user_message": "2-3 sentences written for a non-technical reader.",
+  "recommended_actions": [
+    "Consider reporting to security@company.com",
+    "Do not click any links in this email"
+  ]
 }
 ```
 
+- `risk_score` — integer 0–100 (0 = definitely safe, 100 = definitely phishing)
+- `data_sufficient` — `false` when the available data cannot support a confident verdict
+- `uncertainty_statement` — always populated (non-null) when `verdict` is `UNCERTAIN`
+- `evidence` — only cites specific values extracted from the email; never invented
+- `recommended_actions` — pending human approval; none are executed automatically
+
+---
+
+## Important Limitations and Checks
+
+### What the Skill Can Detect
+- SPF / DKIM / DMARC authentication failures
+- Lookalike sender domains within Levenshtein edit-distance ≤ 3 of 30+ known brands
+- URL redirect chains to suspicious final destinations
+- Suspicious attachment types via filename extension and MIME type
+- Mismatch between `From:` display name and actual sending domain
+
+### What the Skill Cannot Detect
+- **Spear-phishing with no technical failures** — a well-crafted spear-phishing email from a legitimately registered domain with passing SPF/DKIM/DMARC may return `NOT_PHISHING` or `UNCERTAIN`. Technical signals alone cannot catch every social-engineering attack.
+- **Email body content analysis** — the extractor does not parse free-form body text for urgency cues, grammar, or tone. The AI judge only sees structured extracted data, not the raw message body.
+- **Homoglyph domain attacks** — lookalike detection uses ASCII Levenshtein distance only; Unicode homoglyphs (e.g. Cyrillic `а` vs Latin `a`) are not caught.
+- **Zero-day or newly registered phishing domains** — domains with no brand resemblance and passing auth records will not be flagged.
+- **Attachments opened in-session** — attachment hashes are returned for threat-intel lookup but are not automatically checked against any external database.
+- **Images or QR codes inside the email body** — embedded images and QR codes in HTML bodies are not decoded or inspected.
+
+### Anti-Hallucination Checks
+- Output is enforced by a Pydantic schema — Claude cannot return fields outside the model
+- Every `evidence` item must reference a specific extracted value; generic claims are forbidden in the system prompt
+- `data_sufficient=false` is required when fewer than 2 concrete evidence items can be cited
+- `UNCERTAIN` verdict is mandatory when signals are contradictory or data is sparse — the skill never guesses between `PHISHING` and `NOT_PHISHING` when unsure
+
+### Human-in-the-Loop Policy
+- `recommended_actions` are shown **only after** the human explicitly types `y`
+- The skill takes **no automated action** — it does not send emails, call APIs, or modify any system state
+- All escalation, reporting, and deletion must be performed manually by the user
+
+---
+
 ## References
 
-- `references/known_brands.md` — brand list, detection logic, known limitations
+- `references/known_brands.md` — full brand list, detection logic, and known limitations
 - `references/auth_headers_reference.md` — SPF/DKIM/DMARC result codes and meanings
-
-## Assets
-
-- `assets/sample_phishing.eml` — test fixture with SPF/DKIM/DMARC failures and
-  a lookalike PayPal domain (`paypa1-verify.com`)
+- `assets/sample_phishing.eml` — test fixture with SPF/DKIM/DMARC failures and a lookalike PayPal domain
