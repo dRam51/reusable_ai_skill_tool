@@ -100,25 +100,70 @@ Evidence found in this email's data:
 
 ## How It Works
 
-### Stage 1 — Technical Extraction (`scripts/analyzer.py`)
+```
+main.py  →  analyzer.py        →  skill.py         →  main.py
+reads       extracts facts        asks Claude          shows verdict
+.eml        (no AI)               makes verdict        prompts human
+```
 
-| Feature | Detail |
+---
+
+## Script Reference
+
+### `scripts/analyzer.py` — Stage 1: Technical Extraction
+
+The data collector. Contains no AI — it purely reads the raw `.eml` file and pulls out measurable facts using Python's standard `email` library and `requests`.
+
+| Function | What it does |
 |---|---|
-| Headers | Extracts all headers; surfaces auth results, originating IP, mailer |
-| SPF / DKIM / DMARC | Parsed from `Authentication-Results` and `Received-SPF` |
-| URL resolution | Follows redirects; records original → final URL and status code |
-| Attachment hashes | MD5 + SHA-256 per attachment for threat-intel lookup |
-| Lookalike domains | Levenshtein distance ≤ 3 against 30+ known brand names |
-| `data_availability` | Explicit flags telling the AI what was and wasn't found |
+| `_extract_headers()` | Parses every email header into a dict (From, Subject, Received, X-Originating-IP, etc.) |
+| `_extract_auth()` | Scrapes `Authentication-Results` and `Received-SPF` headers with regex to get SPF, DKIM, and DMARC pass/fail results |
+| `_resolve_url()` | Follows a single URL through all redirects and records the original URL, final destination, and HTTP status code |
+| `_extract_urls()` | Finds every link in the plain-text and HTML body parts, deduplicates them, and calls `_resolve_url()` on each (capped at 20) |
+| `_extract_attachments()` | Reads each attachment's raw bytes and computes MD5 and SHA-256 hashes for threat-intel lookup |
+| `_check_lookalikes()` | Collects all domains from From/Reply-To/Return-Path headers and URL hosts, then measures Levenshtein edit distance against 30+ known brand names — flags anything within distance ≤ 3 |
+| `analyze_email()` | Public entry point — calls all of the above and returns an `EmailAnalysis` dataclass |
 
-### Stage 2 — AI Judgment (`scripts/skill.py`)
+All findings are packaged into an `EmailAnalysis` dataclass that is passed directly to `skill.py`.
 
-- **Model:** `claude-opus-4-7` with adaptive thinking
-- **Structured output:** Pydantic `PhishingVerdict` via `client.messages.parse()`
-- **Prompt caching** on the system prompt for repeated calls
-- The system prompt explicitly forbids inventing indicators not present in the extracted data
+---
 
-### Human-in-the-Loop Gate (`scripts/main.py`)
+### `scripts/skill.py` — Stage 2: AI Judgment
+
+The AI brain. Takes the structured `EmailAnalysis` from `analyzer.py` and uses the Anthropic SDK to produce a validated, schema-constrained verdict.
+
+| Component | What it does |
+|---|---|
+| `PhishingVerdict` (Pydantic model) | Defines the exact output shape Claude must return — `verdict`, `confidence`, `risk_score`, `evidence`, `recommended_actions`, and more. Claude cannot return fields outside this model. |
+| `_SYSTEM_PROMPT` | Instructs `claude-opus-4-7` to act as a phishing analyst. Contains explicit anti-hallucination rules: every `evidence` item must quote a specific value from the input data, generic claims are forbidden, and `UNCERTAIN` is required when fewer than 2 concrete evidence items can be cited. |
+| `_build_payload()` | Converts `EmailAnalysis` into a clean JSON dict for the API call. Includes a `data_availability` section that explicitly tells Claude which fields are present vs null, preventing false inference. |
+| `judge_email()` | Calls `client.messages.parse()` with adaptive thinking and a cached system prompt. Returns a validated `PhishingVerdict` object. Falls back to a safe `UNCERTAIN` verdict if the model declines or returns an unparseable response. |
+| `format_report()` | Formats the `PhishingVerdict` into a readable terminal report with verdict banner, evidence bullets, and a reminder that no automated action has been taken. |
+
+---
+
+### `scripts/main.py` — CLI + Human-in-the-Loop Gate
+
+The entry point and safety gate. The only script a user directly runs.
+
+| Function | What it does |
+|---|---|
+| `main()` | Parses CLI arguments, validates the `.eml` file, orchestrates the two-stage pipeline, and routes output to either JSON or interactive mode |
+| `_interactive_flow()` | Displays the formatted report then branches on verdict: prompts for confirmation before showing any actions for `PHISHING` or `UNCERTAIN`; exits quietly for `NOT_PHISHING` |
+| `_prompt_confirm()` | Reads a `[y/N]` response from the user; treats EOF and Ctrl-C as `N` to prevent accidental escalation |
+| `_show_actions()` | Prints the `recommended_actions` list only after the user has confirmed — nothing is executed automatically |
+
+`--json` mode skips all interactive prompts and prints raw JSON, useful for piping the verdict into other tools or systems.
+
+---
+
+### `main.py` *(project root)* — Root Launcher
+
+A four-line shim. Adds `scripts/` to `sys.path` and calls the skill's `main()` function so the tool can be run from the project root without needing to `cd` into the skill directory.
+
+---
+
+## Human-in-the-Loop Gate
 
 | Verdict | What happens |
 |---|---|
