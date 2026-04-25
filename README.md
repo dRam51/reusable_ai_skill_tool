@@ -1,17 +1,17 @@
 # Reusable AI Skill Tool — Phishing Email Analyzer
 
-A two-stage phishing email analyzer built as a reusable Claude Code skill. Drop in a `.eml` file and get a grounded, confidence-rated verdict. All escalation actions require explicit human confirmation — the tool never acts automatically.
+A two-stage phishing email analyzer built as a reusable Claude Code skill. Drop in a `.eml` file and get a grounded, confidence-rated verdict. All escalation actions require explicit human confirmation the tool never acts automatically.
 
 ---
 
 ## Features
 
-- **Binary verdict** — `PHISHING`, `NOT_PHISHING`, or `UNCERTAIN` with a confidence level (`HIGH` / `MEDIUM` / `LOW`)
-- **States uncertainty upfront** — when data is insufficient or contradictory, the tool says so clearly rather than guessing
-- **Anti-hallucination** — output is enforced by a Pydantic schema; every evidence item must cite a specific value from the extracted data
-- **Human-in-the-loop** — recommended actions are shown only after the user explicitly confirms; nothing is reported or deleted automatically
-- **Technical extraction** — headers, SPF/DKIM/DMARC, URL redirect resolution, attachment hashes, lookalike-domain detection
-- **AI judgment** — `claude-opus-4-7` with adaptive thinking and prompt caching
+- **Binary verdict**: `PHISHING`, `NOT_PHISHING`, or `UNCERTAIN` with a confidence level (`HIGH` / `MEDIUM` / `LOW`)
+- **States uncertainty upfront**: when data is insufficient or contradictory, the tool says so clearly rather than guessing
+- **Anti-hallucination**: output is enforced by a Pydantic schema; every evidence item must cite a specific value from the extracted data
+- **Human-in-the-loop**: recommended actions are shown only after the user explicitly confirms; nothing is reported or deleted automatically
+- **Technical extraction**: headers, SPF/DKIM/DMARC, URL redirect resolution, attachment hashes, lookalike-domain detection
+- **AI judgment**: `claude-opus-4-7` with adaptive thinking and prompt caching
 
 ---
 
@@ -57,7 +57,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ## Usage
 
 ```bash
-# Analyze an email (interactive — prompts for confirmation before showing actions)
+# Analyze an email (interactive: prompts for confirmation before showing actions)
 python main.py path/to/email.eml
 
 # Output raw JSON (skips interactive prompts, useful for piping)
