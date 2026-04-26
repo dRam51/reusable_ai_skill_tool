@@ -17,26 +17,7 @@ A two-stage phishing email analyzer built as a reusable Claude Code skill. Drop 
 
 ## Skill Description
 
-### When to Use
-- A user wants to know whether a specific email is a phishing attempt
-- An email has been flagged as suspicious and needs triage
-- A `.eml` file is available and needs automated pre-screening before human review
-- You need a confidence-rated, evidence-backed verdict to inform a security decision
-- You want attachment hashes or URL destinations checked before opening anything
-
-### When NOT to Use
-- The input is not a `.eml` file (e.g. a screenshot, forwarded text, or copy-paste) — the extractor requires raw RFC 2822 format to parse headers and attachments
-- You need real-time inbox scanning or bulk processing of a mail queue — this skill analyzes one email at a time interactively
-- A definitive legal or forensic conclusion is required — this skill provides a triage signal, not a formal security investigation
-- The email has already been opened and links clicked — post-exposure response requires a separate incident workflow
-- You want the skill to automatically report, delete, or forward the email — all actions require explicit human confirmation
-
-### Important Limitations
-- **No body content analysis** — the AI only sees structured extracted data, not the raw message body; urgency cues, grammar, and tone are not evaluated
-- **Spear-phishing with clean auth** — a well-crafted email from a legitimately registered domain with passing SPF/DKIM/DMARC may return `NOT_PHISHING` or `UNCERTAIN`
-- **No homoglyph detection** — lookalike detection uses ASCII Levenshtein distance only; Unicode character substitutions are not caught
-- **No external threat-intel lookup** — attachment hashes are returned but not automatically checked against databases like VirusTotal
-- **One email at a time** — bulk or real-time scanning is not supported
+Analyzes a `.eml` file for phishing indicators and returns a grounded binary verdict — `PHISHING`, `NOT_PHISHING`, or `UNCERTAIN` — with a confidence level. States uncertainty upfront rather than guessing. Never escalates, reports, or deletes anything without explicit human confirmation.
 
 ---
 
