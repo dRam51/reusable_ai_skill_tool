@@ -4,6 +4,11 @@ A two-stage phishing email analyzer built as a reusable Claude Code skill. Drop 
 
 ---
 
+## YouTube Upload
+https://youtu.be/PgBUedtARyk
+
+---
+
 ## Features
 
 - **Binary verdict**: `PHISHING`, `NOT_PHISHING`, or `UNCERTAIN` with a confidence level (`HIGH` / `MEDIUM` / `LOW`)
